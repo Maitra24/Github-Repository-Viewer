@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en" ng-app="myApp">
+<head>
+    <meta charset="UTF-8">
+    <title>GitHub Repository Viewer</title>
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <style>
+        .repository-block {
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 20px;
+            min-height: 150px; /* Set a minimum height for repository block */
+        }
+        .language-tag {
+            display: inline-block;
+            margin-right: 5px;
+            margin-bottom: 5px;
+            padding: 5px 10px;
+            background-color: #007bff;
+            color: #fff;
+            border-radius: 20px;
+        }
+        .github-link {
+            margin-top: 25px;
+        }
+        .skeleton-profile {
+            background-color: #f0f0f0;
+            animation: waving 1.5s infinite ease-in-out;
+            border-radius: 50%;
+            overflow: hidden;
+        }
+        .skeleton {
+            background-color: #f0f0f0;
+            animation: waving 1.5s infinite ease-in-out;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .profile-image {
+            border-radius: 50%; /* Make the profile image round */
+        }
+        @keyframes waving {
+            0% {
+                transform: translateX(0);
+            }
+            50% {
+                transform: translateX(20px);
+            }
+            100% {
+                transform: translateX(0);
+            }
+        }
+    </style>
+    <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.8.2/angular.min.js"></script>
+</head>
+<body>
+    <div class="container" ng-controller="HomeController">
+        <h1 class="mt-5">GitHub Repository Viewer</h1>
+
+        <div ng-show="!searchPerformed" class="my-3">
+            <input type="text" class="form-control" ng-model="username" ng-keyup="$event.keyCode === 13 && fetchUserDetails()" placeholder="Enter GitHub Username">
+            <button class="btn btn-primary mt-2" ng-click="fetchUserDetails()">Fetch User Details</button>
+        </div>
+
+        <div ng-show="loadingUser" class="my-3">
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="skeleton-profile" style="width: 100%; height: 200px;"></div>
+                </div>
+                <div class="col-md-9">
+                    <div class="skeleton" style="width: 100%; height: 200px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <div ng-show="userDetails" class="my-3">
+            <div class="row">
+                <div class="col-md-3">
+                    <img ng-src="{{ userDetails.avatar_url }}" class="img-fluid profile-image" alt="User Avatar">
+                    <p class="github-link"><a ng-href="{{ userDetails.html_url }}" target="_blank"><i class="fas fa-external-link-alt"></i> GitHub Profile</a></p>
+                </div>
+                <div class="col-md-9">
+                    <h2><strong>{{ userDetails.name.charAt(0).toUpperCase() + userDetails.name.slice(1) }}</strong></h2>
+                    <p>{{ userDetails.bio }}</p>
+                    <p><i class="fas fa-map-marker-alt"></i> {{ userDetails.location }}</p>
+                    <p><a ng-href="{{ userDetails.blog }}" target="_blank">{{ userDetails.blog }}</a></p>
+                </div>
+            </div>
+        </div>
+
+        <div ng-show="loadingRepositories" class="my-3">Loading repositories...</div>
+
+        <div ng-show="repositories.length > 0" class="my-3">
+            <h2>Repositories:</h2>
+            <div class="row">
+                <div class="col-md-6" ng-repeat="repo in filteredRepositories">
+                    <div class="repository-block">
+                        <h4><a ng-href="{{repo.html_url}}" target="_blank">{{repo.name}}</a></h4>
+                        <p>{{ repo.description }}</p>
+                        <button class="language-tag" ng-if="repo.language">{{ repo.language }}</button>
+                    </div>
+                </div>
+            </div>
+
+            <ul class="pagination justify-content-center">
+                <li class="page-item" ng-class="{ 'disabled': currentPage === 1 }">
+                    <a class="page-link" href="javascript:void(0)" ng-click="firstPage()">First</a>
+                </li>
+                <li class="page-item" ng-class="{ 'disabled': currentPage === 1 }">
+                    <a class="page-link" href="javascript:void(0)" ng-click="prevPage()">Previous</a>
+                </li>
+                <li class="page-item" ng-repeat="page in pages" ng-class="{ 'active': currentPage === page }">
+                    <a class="page-link" href="javascript:void(0)" ng-click="setPage(page)">{{ page }}</a>
+                </li>
+                <li class="page-item" ng-class="{ 'disabled': currentPage === totalPages }">
+                    <a class="page-link" href="javascript:void(0)" ng-click="nextPage()">Next</a>
+                </li>
+                <li class="page-item" ng-class="{ 'disabled': currentPage === totalPages }">
+                    <a class="page-link" href="javascript:void(0)" ng-click="lastPage()">Last</a>
+                </li>
+            </ul>
+        </div>
+        
+        <!-- Display message if no result is found -->
+        <div ng-show="searchPerformed && !loadingUser && !userDetails && !loadingRepositories" class="my-3">
+            <p>No result found for '{{ username }}'.</p>
+        </div>
+    </div>
+
+    <script>
+        var app = angular.module('myApp', []);
+
+        app.controller('HomeController', function($scope, $http) {
+            $scope.repositories = [];
+            $scope.userDetails = null;
+            $scope.loadingRepositories = false;
+            $scope.loadingUser = false;
+            $scope.currentPage = 1;
+            $scope.itemsPerPage = 6;
+            $scope.searchPerformed = false; // Track if a search has been performed
+
+            $scope.fetchUserDetails = function() {
+                $scope.searchPerformed = true; // Set to true when search is performed
+                $scope.loadingUser = true;
+                $http.get('https://api.github.com/users/' + $scope.username)
+                .then(function(response) {
+                    $scope.userDetails = response.data;
+                    $scope.loadingUser = false;
+                    $scope.fetchRepositories();
+                    $scope.username = ''; // Clear the input field
+                }, function(error) {
+                    console.error('Error fetching user details:', error);
+                    $scope.loadingUser = false;
+                });
+            };
+
+            $scope.fetchRepositories = function() {
+                $scope.loadingRepositories = true;
+                $http.get('https://api.github.com/users/' + $scope.username + '/repos')
+                .then(function(response) {
+                    $scope.repositories = response.data;
+                    $scope.loadingRepositories = false;
+                    $scope.currentPage = 1;
+                }, function(error) {
+                    console.error('Error fetching repositories:', error);
+                    $scope.loadingRepositories = false;
+                });
+            };
+
+            $scope.setPage = function(page) {
+                $scope.currentPage = page;
+            };
+
+            $scope.firstPage = function() {
+                $scope.currentPage = 1;
+            };
+
+            $scope.lastPage = function() {
+                $scope.currentPage = $scope.totalPages;
+            };
+
+            $scope.prevPage = function() {
+                if ($scope.currentPage > 1) {
+                    $scope.currentPage--;
+                }
+            };
+
+            $scope.nextPage = function() {
+                if ($scope.currentPage < $scope.totalPages) {
+                    $scope.currentPage++;
+                }
+            };
+
+            $scope.$watchGroup(['repositories', 'currentPage', 'itemsPerPage'], function() {
+                var begin = (($scope.currentPage - 1) * $scope.itemsPerPage);
+                var end = begin + $scope.itemsPerPage;
+                $scope.filteredRepositories = $scope.repositories.slice(begin, end);
+                $scope.totalPages = Math.ceil($scope.repositories.length / $scope.itemsPerPage);
+                $scope.pages = [];
+                for (var i = 1; i <= $scope.totalPages; i++) {
+                    $scope.pages.push(i);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
